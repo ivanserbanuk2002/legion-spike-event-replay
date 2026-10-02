@@ -20,3 +20,9 @@ Run `npm ci`, then `npm run replay -- --input data/sample-events.jsonl --dedupe`
 Optional `--topic payment.failed` and `--since 2000` filter the dry run. `--help` lists flags.
 JSON output reports selected/delivered/duplicate counts and deliveries per topic.
 CLI delivery means a local no-op callback ran, not a broker acknowledgement. Errors exit 2.
+
+## Development
+
+`npm run typecheck` and `npm test` check the offline contract on Node 20 in CI.
+See [CONTRIBUTING](CONTRIBUTING.md). MIT licensed.
+Status: working local spike; durable checkpoints and broker transport are outside scope.

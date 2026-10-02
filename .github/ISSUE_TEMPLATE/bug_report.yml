@@ -1,0 +1,16 @@
+name: Bug report
+description: Report a reproducible offline replay failure
+body:
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Command and minimal synthetic journal
+      description: Include Node version. Redact private data and secrets.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Expected and actual result
+    validations:
+      required: true
