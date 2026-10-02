@@ -126,19 +126,73 @@ test("CLI rejects invalid until syntax, unsafe bounds and reversed ranges", () =
   }
 });
 
-test("CLI still validates chronological order beyond the until boundary", () => {
+test("CLI still validates chronological order beyond replay boundaries", () => {
   const directory = mkdtempSync(join(tmpdir(), "event-replay-until-"));
   const input = join(directory, "events.jsonl");
   try {
     writeFileSync(input, [event, { ...event, timestamp: 20 }, { ...event, timestamp: 19 }]
       .map((e) => JSON.stringify(e)).join("\n"));
-    const result = spawnSync(process.execPath, ["--import", "tsx", "src/cli.ts", "--input", input,
-      "--until", "10"], { encoding: "utf8" });
-    assert.equal(result.status, 2);
-    assert.equal(result.stdout, "");
-    assert.match(result.stderr, /line 3.*order/);
+    for (const args of [["--until", "10"], ["--limit", "1"]]) {
+      const result = spawnSync(process.execPath, ["--import", "tsx", "src/cli.ts", "--input", input,
+        ...args], { encoding: "utf8" });
+      assert.equal(result.status, 2);
+      assert.equal(result.stdout, "");
+      assert.match(result.stderr, /line 3.*order/);
+    }
   } finally {
     rmSync(input, { force: true });
     rmdirSync(directory);
+  }
+});
+
+test("limit counts matched records before dedupe and excludes later conflicts from stats", () => {
+  const events = [{ ...event, timestamp: 0 }, { ...event, topic: "payment.failed" as const },
+    event, event, { ...event, paymentId: "later-conflict" }, { ...event, eventId: "later" }];
+  const seen: string[] = [];
+  const stats = replay.replayEvents(events, (e) => seen.push(e.eventId),
+    { topic: "payment.created", since: 10, until: 10, limit: 2, dedupe: true });
+  assert.deepEqual(seen, ["e1"]);
+  assert.deepEqual(stats, { selected: 2, delivered: 1, duplicates: 1,
+    byTopic: { "payment.created": 1, "payment.failed": 0 } });
+});
+
+test("limit preserves equal-time file order and synchronous delivery across topics", () => {
+  const events = [event, { ...event, eventId: "e2", topic: "payment.failed" as const },
+    { ...event, eventId: "e3", timestamp: 20 }];
+  const seen: string[] = [];
+  const stats = replay.replayEvents(events, (e) => seen.push(e.eventId), { limit: 2 });
+  assert.deepEqual(seen, ["e1", "e2"]);
+  assert.deepEqual(stats, { selected: 2, delivered: 2, duplicates: 0,
+    byTopic: { "payment.created": 1, "payment.failed": 1 } });
+  assert.equal(replay.replayEvents(events, () => {}, { limit: Number.MAX_SAFE_INTEGER }).selected, 3);
+});
+
+test("replay rejects invalid limits before delivery even for empty input", () => {
+  for (const limit of [0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.throws(() => replay.replayEvents([], () => assert.fail(), { limit }), /positive safe integer/);
+  }
+});
+
+test("dedupe checks conflicts inside the limit but does not inspect records after it", () => {
+  const events = [event, { ...event, paymentId: "conflicting" }];
+  assert.equal(replay.replayEvents(events, () => {}, { limit: 1, dedupe: true }).delivered, 1);
+  assert.throws(() => replay.replayEvents(events, () => {}, { limit: 2, dedupe: true }), /conflicting/);
+});
+
+test("CLI limits the filtered selection before dedupe", () => {
+  const result = spawnSync(process.execPath, ["--import", "tsx", "src/cli.ts", "--since", "2000",
+    "--until", "3000", "--limit", "2", "--dedupe"], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), { selected: 2, delivered: 1, duplicates: 1,
+    byTopic: { "payment.created": 0, "payment.failed": 1 } });
+});
+
+test("CLI rejects malformed, zero and unsafe limits without a summary", () => {
+  for (const args of [["--limit"], ["--limit", ""], ["--limit", "0"], ["--limit", "-1"],
+    ["--limit", "1.5"], ["--limit", "NaN"], ["--limit", "9007199254740992"]]) {
+    const result = spawnSync(process.execPath, ["--import", "tsx", "src/cli.ts", ...args], { encoding: "utf8" });
+    assert.equal(result.status, 2, result.stdout);
+    assert.equal(result.stdout, "");
+    assert.notEqual(result.stderr, "");
   }
 });

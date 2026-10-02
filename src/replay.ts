@@ -1,6 +1,6 @@
 import type { EventRecord, Topic } from "./parser.js";
 
-export interface ReplayOptions { topic?: Topic; since?: number; until?: number; dedupe?: boolean; }
+export interface ReplayOptions { topic?: Topic; since?: number; until?: number; limit?: number; dedupe?: boolean; }
 export interface ReplayStats {
   selected: number;
   delivered: number;
@@ -17,10 +17,13 @@ export function replayEvents(events: readonly EventRecord[], listener: (event: E
   }
   if (options.since !== undefined && options.until !== undefined && options.since > options.until)
     throw new Error("since must not exceed until");
+  if (options.limit !== undefined && (!Number.isSafeInteger(options.limit) || options.limit <= 0))
+    throw new Error("limit must be a positive safe integer");
   const result: ReplayStats = { selected: 0, delivered: 0, duplicates: 0,
     byTopic: { "payment.created": 0, "payment.failed": 0 } };
   const seen = new Map<string, string>();
   for (const event of events) {
+    if (options.limit !== undefined && result.selected >= options.limit) break;
     if (options.topic && event.topic !== options.topic) continue;
     if (options.since !== undefined && event.timestamp < options.since) continue;
     if (options.until !== undefined && event.timestamp > options.until) continue;
