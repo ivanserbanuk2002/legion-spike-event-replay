@@ -8,8 +8,10 @@ Each row has `eventId`, `topic`, `paymentId`, and a nonnegative safe-integer mil
 Supported topics are `payment.created` and `payment.failed`. IDs are nonblank strings.
 This is a local replay helper; it does not execute payments or publish to a broker.
 
-`replayEvents(events, listener, { topic?, since? })` calls a synchronous listener
-in file order. `since` is inclusive. Journals with decreasing timestamps are rejected,
+`replayEvents(events, listener, { topic?, since?, until?, dedupe? })` calls a synchronous listener
+in file order. `since` and `until` are inclusive nonnegative safe-integer millisecond
+bounds; invalid bounds or `since > until` throw before delivery. Omit either bound
+for an open-ended range. Journals with decreasing timestamps are rejected,
 not sorted. Callback errors stop replay; earlier deliveries are not rolled back.
 The library expects records validated by `parseEvents`; async handlers are not awaited.
 
@@ -18,10 +20,20 @@ Conflicting payment IDs or timestamps for that key throw. Dedupe is off by defau
 and scoped to one replay call; equal payment IDs do not imply duplicate events.
 
 Run `npm ci`, then `npm run --silent replay -- --input data/sample-events.jsonl --dedupe`.
-Optional `--topic payment.failed` and `--since 2000` filter the dry run. `--help` lists flags.
+Optional `--topic payment.failed`, `--since 2000` and `--until 3000` filter the dry run.
+CLI time bounds accept decimal digits only. `--help` lists flags.
 JSON output reports selected/delivered/duplicate counts and deliveries per topic.
 CLI delivery means a local no-op callback ran, not a broker acknowledgement. Errors exit 2.
 Use npm's `--silent` option when piping JSON into another tool so npm's command banner is omitted.
+
+```sh
+npm run --silent replay -- --since 2000 --until 2000 --dedupe
+```
+
+This selects the two sample records at timestamp 2000 and delivers one after dedupe.
+Time and topic filters apply before dedupe and conflict checks. The CLI parses and
+validates the whole journal before replay, including records outside the selected
+time range; it never hides invalid chronological order by filtering it out.
 
 ## Development
 

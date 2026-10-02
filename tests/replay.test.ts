@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import * as replay from "../src/replay.js";
 import * as parser from "../src/parser.js";
 
@@ -72,5 +75,70 @@ test("CLI returns 2 without summary for invalid arguments and missing files", ()
     const result = spawnSync(process.execPath, ["--import", "tsx", "src/cli.ts", ...args], { encoding: "utf8" });
     assert.equal(result.status, 2);
     assert.equal(result.stdout, "");
+  }
+});
+
+test("until and since select inclusive boundaries in file order", () => {
+  const events = [{ ...event, timestamp: 0 }, event, { ...event, eventId: "e2" },
+    { ...event, eventId: "e3", timestamp: 20 }, { ...event, eventId: "e4", timestamp: 30 }];
+  const seen: string[] = [];
+  const stats = replay.replayEvents(events, (e) => seen.push(e.eventId), { since: 10, until: 20 });
+  assert.deepEqual(seen, ["e1", "e2", "e3"]);
+  assert.deepEqual(stats, { selected: 3, delivered: 3, duplicates: 0,
+    byTopic: { "payment.created": 3, "payment.failed": 0 } });
+  assert.equal(replay.replayEvents(events, () => {}, { until: 0 }).delivered, 1);
+  assert.equal(replay.replayEvents(events, () => {}, { since: 10, until: 10 }).delivered, 2);
+  assert.equal(replay.replayEvents(events, () => {}, { until: Number.MAX_SAFE_INTEGER }).delivered, 5);
+});
+
+test("replay rejects invalid time bounds and reversed ranges before delivery", () => {
+  for (const bound of ["since", "until"] as const) {
+    for (const value of [-1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+      assert.throws(() => replay.replayEvents([], () => assert.fail(), { [bound]: value }), /safe integer/);
+    }
+  }
+  assert.throws(() => replay.replayEvents([event], () => assert.fail(), { since: 11, until: 10 }), /since.*until/);
+});
+
+test("until filters records before deduplication and conflict checks", () => {
+  const events = [event, event, { ...event, paymentId: "conflict", timestamp: 20 }];
+  const stats = replay.replayEvents(events, () => {}, { until: 10, dedupe: true });
+  assert.deepEqual(stats, { selected: 2, delivered: 1, duplicates: 1,
+    byTopic: { "payment.created": 1, "payment.failed": 0 } });
+});
+
+test("CLI supports inclusive until combined with since and dedupe", () => {
+  const result = spawnSync(process.execPath, ["--import", "tsx", "src/cli.ts",
+    "--since", "2000", "--until", "2000", "--dedupe"], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), { selected: 2, delivered: 1, duplicates: 1,
+    byTopic: { "payment.created": 0, "payment.failed": 1 } });
+});
+
+test("CLI rejects invalid until syntax, unsafe bounds and reversed ranges", () => {
+  for (const args of [["--until"], ["--until", ""], ["--until", "-1"], ["--until", "1.5"],
+    ["--until", "NaN"], ["--until", "9007199254740992"], ["--since", "9007199254740992"],
+    ["--since", "2000", "--until", "1000"]]) {
+    const result = spawnSync(process.execPath, ["--import", "tsx", "src/cli.ts", ...args], { encoding: "utf8" });
+    assert.equal(result.status, 2, result.stdout);
+    assert.equal(result.stdout, "");
+    assert.notEqual(result.stderr, "");
+  }
+});
+
+test("CLI still validates chronological order beyond the until boundary", () => {
+  const directory = mkdtempSync(join(tmpdir(), "event-replay-until-"));
+  const input = join(directory, "events.jsonl");
+  try {
+    writeFileSync(input, [event, { ...event, timestamp: 20 }, { ...event, timestamp: 19 }]
+      .map((e) => JSON.stringify(e)).join("\n"));
+    const result = spawnSync(process.execPath, ["--import", "tsx", "src/cli.ts", "--input", input,
+      "--until", "10"], { encoding: "utf8" });
+    assert.equal(result.status, 2);
+    assert.equal(result.stdout, "");
+    assert.match(result.stderr, /line 3.*order/);
+  } finally {
+    rmSync(input, { force: true });
+    rmdirSync(directory);
   }
 });
