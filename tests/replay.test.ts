@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { spawnSync } from "node:child_process";
 import * as replay from "../src/replay.js";
 import * as parser from "../src/parser.js";
 
@@ -54,4 +55,22 @@ test("optional dedupe scopes IDs to topics and rejects conflicting selected reco
   assert.equal(replay.replayEvents([event, event], () => {}).delivered, 2);
   assert.throws(() => replay.replayEvents([event, { ...event, paymentId: "other" }],
     () => {}, { dedupe: true }), /conflicting/);
+});
+
+
+test("CLI emits dry-run summary and supports inclusive filters and dedupe", () => {
+  const result = spawnSync(process.execPath, ["--import", "tsx", "src/cli.ts", "--dedupe", "--since", "2000"], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  const stats = JSON.parse(result.stdout);
+  assert.equal(stats.selected, 3);
+  assert.equal(stats.delivered, 2);
+  assert.equal(stats.duplicates, 1);
+});
+
+test("CLI returns 2 without summary for invalid arguments and missing files", () => {
+  for (const args of [["--since", "NaN"], ["--topic", "unknown"], ["--input", "missing.jsonl"]]) {
+    const result = spawnSync(process.execPath, ["--import", "tsx", "src/cli.ts", ...args], { encoding: "utf8" });
+    assert.equal(result.status, 2);
+    assert.equal(result.stdout, "");
+  }
 });

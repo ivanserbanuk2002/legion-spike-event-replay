@@ -15,3 +15,8 @@ The library expects records validated by `parseEvents`; async handlers are not a
 `dedupe: true` skips exact repeats of `(topic, eventId)` within selected events.
 Conflicting payment IDs or timestamps for that key throw. Dedupe is off by default
 and scoped to one replay call; equal payment IDs do not imply duplicate events.
+
+Run `npm ci`, then `npm run replay -- --input data/sample-events.jsonl --dedupe`.
+Optional `--topic payment.failed` and `--since 2000` filter the dry run. `--help` lists flags.
+JSON output reports selected/delivered/duplicate counts and deliveries per topic.
+CLI delivery means a local no-op callback ran, not a broker acknowledgement. Errors exit 2.
