@@ -41,3 +41,17 @@ test("replay preserves callback failure without delivering later events", () => 
     (error) => error === failure);
   assert.equal(calls, 1);
 });
+
+
+test("optional dedupe scopes IDs to topics and rejects conflicting selected records", () => {
+  const other = { ...event, topic: "payment.failed" as const };
+  const seen: string[] = [];
+  const stats = replay.replayEvents([event, event, other], (e) => seen.push(e.topic), { dedupe: true });
+  assert.deepEqual(seen, ["payment.created", "payment.failed"]);
+  assert.equal(stats.selected, 3);
+  assert.equal(stats.delivered, 2);
+  assert.equal(stats.duplicates, 1);
+  assert.equal(replay.replayEvents([event, event], () => {}).delivered, 2);
+  assert.throws(() => replay.replayEvents([event, { ...event, paymentId: "other" }],
+    () => {}, { dedupe: true }), /conflicting/);
+});

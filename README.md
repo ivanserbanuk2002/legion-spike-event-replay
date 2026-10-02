@@ -11,3 +11,7 @@ This is a local replay helper; it does not execute payments or publish to a brok
 in file order. `since` is inclusive. Journals with decreasing timestamps are rejected,
 not sorted. Callback errors stop replay; earlier deliveries are not rolled back.
 The library expects records validated by `parseEvents`; async handlers are not awaited.
+
+`dedupe: true` skips exact repeats of `(topic, eventId)` within selected events.
+Conflicting payment IDs or timestamps for that key throw. Dedupe is off by default
+and scoped to one replay call; equal payment IDs do not imply duplicate events.
