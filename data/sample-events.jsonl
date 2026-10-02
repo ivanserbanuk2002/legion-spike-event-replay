@@ -1,0 +1,4 @@
+{"eventId": "evt-1", "topic": "payment.created", "paymentId": "payment-a", "timestamp": 1000}
+{"eventId": "evt-2", "topic": "payment.failed", "paymentId": "payment-a", "timestamp": 2000}
+{"eventId": "evt-2", "topic": "payment.failed", "paymentId": "payment-a", "timestamp": 2000}
+{"eventId": "evt-3", "topic": "payment.created", "paymentId": "payment-b", "timestamp": 3000}
